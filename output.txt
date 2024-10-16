@@ -1,0 +1,774 @@
+  # Filename: ./App.js
+  import { StatusBar } from 'expo-status-bar';
+  import { StyleSheet, Text, View } from 'react-native';
+  import BottomTabNavigator from './components/BottomTabNavigator';
+
+  export default function App() {
+    return <BottomTabNavigator />;
+  }
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: '#fff',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  });
+
+  # Filename: components/BLEStack.js
+  // Import the necessary components
+  import { createStackNavigator } from '@react-navigation/stack';
+  import ScanBLEDevicesScreen from '../screens/ScanBLEDevicesScreen';
+  import DeviceDetailsScreen from '../screens/DeviceDetailsScreen';
+
+  const Stack = createStackNavigator();
+
+  const BLEStack = () => {
+    return (
+      <Stack.Navigator initialRouteName="ScanDevices">
+        <Stack.Screen name="ScanDevices" component={ScanBLEDevicesScreen} options={{ title: 'Scan Devices' }} />
+        <Stack.Screen name="DeviceDetails" component={DeviceDetailsScreen} options={{ title: 'Device Details' }} />
+      </Stack.Navigator>
+    );
+  };
+
+  export default BLEStack;
+
+  # Filename: components/DeviceCard.js
+  import React from 'react';
+  import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+
+  const DeviceCard = ({ device, onPress }) => {
+      return (
+        <TouchableOpacity onPress={() => onPress(device)} style={styles.card}>
+          <Text style={styles.deviceName}>{device.name || 'Unnamed Device'}</Text>
+          <Text style={styles.deviceId}>{device.id}</Text>
+        </TouchableOpacity>
+      );
+    };
+    
+
+  const styles = StyleSheet.create({
+    card: {
+      backgroundColor: '#f0f0f0',
+      borderRadius: 10,
+      padding: 15,
+      marginTop: 10,
+      marginHorizontal: 10,
+      shadowColor: "#000",
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.25,
+      shadowRadius: 3.84,
+      elevation: 5,
+    },
+    deviceName: {
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    deviceId: {
+      fontSize: 12,
+      color: '#666',
+    }
+  });
+
+  export default DeviceCard;
+
+  # Filename: components/BottomTabNavigator.js
+  import React from 'react';
+  import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+  import { NavigationContainer } from '@react-navigation/native';
+  import DummyScreenOne from '../screens/DummyScreenOne';
+  import DummyScreenTwo from '../screens/DummyScreenTwo';
+  import BLEStack from './BLEStack'; // Import the stack navigator
+
+  const Tab = createBottomTabNavigator();
+
+  const BottomTabNavigator = () => {
+    return (
+      <NavigationContainer>
+        <Tab.Navigator screenOptions={{ headerShown: false }}>
+          <Tab.Screen name="Home" component={DummyScreenOne} />
+          <Tab.Screen name="Settings" component={DummyScreenTwo} />
+          <Tab.Screen name="BLE Scan" component={BLEStack} />
+        </Tab.Navigator>
+      </NavigationContainer>
+    );
+  };
+
+  export default BottomTabNavigator;
+
+  # Filename: components/StreamingControl.js
+  import React, { useState } from 'react';
+  import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+  import BleService from '../services/BleService';
+  import { BLE_CONFIG } from '../config';
+
+  const StreamingControl = ({ deviceId }) => {
+      const [isStreaming, setIsStreaming] = useState(false);
+      const manager = BleService.getInstance();
+
+      const startStreaming = async () => {
+          try {
+              await manager.writeCharacteristicWithResponseForDevice(
+                  deviceId,
+                  BLE_CONFIG.serviceUUID,
+                  BLE_CONFIG.characteristicUUIDs.is_streaming,
+                  'AQ==' // Base64 for 0x01
+              );
+              setIsStreaming(true);
+          } catch (error) {
+              console.error("Failed to start streaming:", error);
+          }
+      };
+
+      const endStreaming = async () => {
+          try {
+              await manager.writeCharacteristicWithResponseForDevice(
+                  deviceId,
+                  BLE_CONFIG.serviceUUID,
+                  BLE_CONFIG.characteristicUUIDs.is_streaming,
+                  'AA==' // Base64 for 0x00
+              );
+              setIsStreaming(false);
+          } catch (error) {
+              console.error("Failed to end streaming:", error);
+          }
+      };
+
+      return (
+          <View style={styles.container}>
+              <TouchableOpacity
+                  style={[styles.button, isStreaming && styles.disabledButton]}
+                  onPress={startStreaming}
+                  disabled={isStreaming}
+              >
+                  <Text style={styles.buttonText}>Start Streaming</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                  style={[styles.button, !isStreaming && styles.disabledButton, styles.endButton]}
+                  onPress={endStreaming}
+                  disabled={!isStreaming}
+              >
+                  <Text style={styles.buttonText}>End Streaming</Text>
+              </TouchableOpacity>
+          </View>
+      );
+  };
+
+  const styles = StyleSheet.create({
+      container: {
+          flexDirection: 'row',
+          justifyContent: 'space-around',
+          marginVertical: 20,
+          width: '100%',
+      },
+      button: {
+          flex: 1,
+          backgroundColor: 'green',
+          padding: 15,
+          margin: 5,
+          borderRadius: 8,
+          alignItems: 'center',
+          justifyContent: 'center',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.2,
+          shadowRadius: 2,
+          elevation: 3,
+      },
+      endButton: {
+          backgroundColor: 'red',
+      },
+      disabledButton: {
+          backgroundColor: 'gray',
+      },
+      buttonText: {
+          color: 'white',
+          fontSize: 16,
+          fontWeight: 'bold',
+      },
+  });
+
+  export default StreamingControl;
+
+  # Filename: components/CircularPulse.js
+  import React, { useEffect, useRef, useState } from 'react';
+  import { View, Text, StyleSheet, Animated } from 'react-native';
+  import BleService from '../services/BleService';
+  import { BLE_CONFIG } from '../config';
+  import { Buffer } from 'buffer';
+  global.Buffer = Buffer;
+
+  const CircularPulse = ({ deviceId }) => {
+    const [pulseRate, setPulseRate] = useState(0);
+    const rotateAnim = useRef(new Animated.Value(0)).current;
+    const scaleAnim = useRef(new Animated.Value(1)).current;
+
+    useEffect(() => {
+      const rotate = () => {
+        Animated.loop(
+          Animated.timing(rotateAnim, {
+            toValue: 1,
+            duration: 8000,
+            useNativeDriver: true,
+          })
+        ).start();
+      };
+
+      const pulse = () => {
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(scaleAnim, {
+              toValue: 1.2,
+              duration: 2000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(scaleAnim, {
+              toValue: 1,
+              duration: 2000,
+              useNativeDriver: true,
+            }),
+          ])
+        ).start();
+      };
+
+      rotate();
+      pulse();
+    }, [rotateAnim, scaleAnim]);
+
+    useEffect(() => {
+      const manager = BleService.getInstance();
+      let subscription;
+
+      const setupNotifications = async () => {
+        try {
+          await manager.connectToDevice(deviceId);
+          await manager.discoverAllServicesAndCharacteristicsForDevice(deviceId);
+          subscription = manager.monitorCharacteristicForDevice(
+            deviceId,
+            BLE_CONFIG.serviceUUID,
+            BLE_CONFIG.characteristicUUIDs.hr,
+            (error, characteristic) => {
+              if (error) {
+                console.error("Error setting up notifications:", error);
+                return;
+              }
+              if (characteristic && characteristic.value) {
+                const value = Buffer.from(characteristic.value, 'base64').readUInt8(0);
+                setPulseRate(value);
+              }
+            }
+          );
+        } catch (error) {
+          console.error("Error connecting to device:", error);
+        }
+      };
+
+      setupNotifications();
+
+      return () => {
+        if (subscription) {
+          subscription.remove();
+        }
+        manager.cancelDeviceConnection(deviceId);
+      };
+    }, [deviceId]);
+
+    const rotateInterpolate = rotateAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['0deg', '360deg'],
+    });
+
+    const trailDots = Array.from({ length: 10 }).map((_, index) => {
+      const trailAnim = rotateAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [`${index * 36}deg`, `${index * 36 + 360}deg`],
+      });
+
+      return (
+        <Animated.View
+          key={index}
+          style={[
+            styles.trailDot,
+            {
+              transform: [{ rotate: trailAnim }, { translateX: 50 }],
+              opacity: 1 - index * 0.1,
+            },
+          ]}
+        >
+          <View style={styles.glowingDot} />
+        </Animated.View>
+      );
+    });
+
+    return (
+      <View style={styles.container}>
+        {/* Pulsing Circle */}
+        <Animated.View style={[styles.pulsingCircle, { transform: [{ scale: scaleAnim }] }]}>
+          {/* Glowing Mark with Trail */}
+          {trailDots}
+        </Animated.View>
+
+        {/* Inner Circle */}
+        <View style={styles.innerCircle}>
+          <Text style={styles.text}>{pulseRate}</Text>
+        </View>
+      </View>
+    );
+  };
+
+  const styles = StyleSheet.create({
+    container: {
+      justifyContent: 'center',
+      alignItems: 'center',
+      width: 200,
+      height: 200,
+    },
+    pulsingCircle: {
+      position: 'absolute',
+      justifyContent: 'center',
+      alignItems: 'center',
+      width: 200,
+      height: 200,
+    },
+    glowingDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: '#05C7F2',
+      shadowColor: '#05C7F2',
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 1,
+      shadowRadius: 10,
+    },
+    trailDot: {
+      position: 'absolute',
+      width: 10,
+      height: 10,
+    },
+    innerCircle: {
+      position: 'absolute',
+      width: 100,
+      height: 100,
+      borderRadius: 50,
+      backgroundColor: 'transparent',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    text: {
+      color: '#05C7F2',
+      fontSize: 34,
+      fontWeight: 'bold',
+    },
+  });
+
+  export default CircularPulse;
+
+  # Filename: components/ChartComponent.js
+  import React, { useEffect, useState, useRef } from 'react';
+  import { View, Text, Dimensions, StyleSheet } from 'react-native';
+  import { LineChart, Grid, YAxis } from 'react-native-svg-charts';
+  import * as shape from 'd3-shape';
+  import BleService from '../services/BleService';
+  import { Buffer } from 'buffer';
+
+  const ChartComponent = ({ title, deviceId, color, serviceUUID, characteristicId }) => {
+      const screenWidth = Dimensions.get('window').width;
+      const [data, setData] = useState([0]); // Initial mock data to render chart
+      const dataQueue = useRef([]); // Queue to store incoming data
+
+      useEffect(() => {
+          const manager = BleService.getInstance();
+          let subscription;
+
+          const setupNotifications = async () => {
+              try {
+                  subscription = manager.monitorCharacteristicForDevice(
+                      deviceId,
+                      serviceUUID,
+                      characteristicId,
+                      (error, characteristic) => {
+                          if (error) {
+                              console.error("Error setting up notifications:", error);
+                              return;
+                          }
+                          if (characteristic) {
+                              const value = Buffer.from(characteristic.value, 'base64');
+                              const int32Data = [];
+                              for (let i = 0; i < value.length; i += 4) {
+                                  if (i + 4 <= value.length) {
+                                      const int32 = value.readInt32LE(i);
+                                      int32Data.push(int32);
+                                  }
+                              }
+                              let endIndex = int32Data.length;
+                              while (endIndex > 0 && int32Data[endIndex - 1] === 0) {
+                                  endIndex--;
+                              }
+                              const trimmedData = int32Data.slice(0, endIndex);
+                              dataQueue.current.push(...trimmedData);
+                          }
+                      }
+                  );
+              } catch (error) {
+                  console.error("Error connecting to device:", error);
+              }
+          };
+
+          setupNotifications();
+
+          const interval = setInterval(() => {
+              if (dataQueue.current.length > 0) {
+                  setData(prevData => {
+                      const newData = [...prevData, ...dataQueue.current];
+                      dataQueue.current = [];
+                      return newData.slice(-100);
+                  });
+              }
+          }, 100);
+
+          return () => {
+              if (subscription) {
+                  subscription.remove();
+              }
+              clearInterval(interval);
+          };
+      }, [deviceId, serviceUUID, characteristicId]);
+
+      // useEffect(() => {
+      //     console.log("Filtered data:", data);
+      // }, [data]);
+
+      const filteredData = data.filter(value => typeof value === 'number' && !isNaN(value) && isFinite(value));
+
+      return (
+          <View style={styles.card}>
+              <Text style={styles.title}>{title}</Text>
+              <View style={styles.chartContainer}>
+                  <YAxis
+                      data={filteredData}
+                      contentInset={{ top: 20, bottom: 20 }}
+                      svg={{ fill: 'grey', fontSize: 10 }}
+                      numberOfTicks={10}
+                      formatLabel={(value) => `${value}`}
+                  />
+                  <LineChart
+                      style={styles.chart}
+                      data={filteredData}
+                      svg={{ stroke: color, strokeWidth: 2 }}
+                      contentInset={{ top: 20, bottom: 20 }}
+                      curve={shape.curveLinear}
+                  >
+                      <Grid belowChart={true} svg={{ fill: 'grey' }} contentInset={{ top: 20, bottom: 20 }} />
+                  </LineChart>
+              </View>
+          </View>
+      );
+  };
+
+  const styles = StyleSheet.create({
+      card: {
+          backgroundColor: '#fff',
+          borderRadius: 10,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.2,
+          shadowRadius: 2,
+          elevation: 3,
+          marginBottom: 20,
+          padding: 15,
+          width: '90%',
+          alignSelf: 'center',
+      },
+      chartContainer: {
+          height: 200,
+          flexDirection: 'row',
+      },
+      chart: {
+          flex: 1,
+          marginLeft: 10,
+      },
+      title: {
+          fontSize: 16,
+          fontWeight: 'bold',
+          textAlign: 'center',
+          marginBottom: 10,
+          color: '#333',
+      },
+  });
+
+  export default ChartComponent;
+
+  # Filename: screens/DummyScreenOne.js
+  // DummyScreenOne.js
+  import React from 'react';
+  import { View, Text } from 'react-native';
+  import CircularPulse from '../components/CircularPulse';
+  const DummyScreenOne = () => {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>Home Screen</Text>
+        <CircularPulse pulseRate={75} />
+      </View>
+    );
+  };
+
+  export default DummyScreenOne;
+
+  // Repeat similarly for DummyScreenTwo.js with different content
+
+  # Filename: screens/DummyScreenTwo.js
+  // DummyScreenOne.js
+  import React from 'react';
+  import { View, Text } from 'react-native';
+
+  const DummyScreenTwo = () => {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>Home Screen 2</Text>
+      </View>
+    );
+  };
+
+  export default DummyScreenTwo;
+
+  // Repeat similarly for DummyScreenTwo.js with different content
+
+  # Filename: screens/DeviceDetailsScreen.js
+  import React, { useState, useEffect } from 'react';
+  import { View, Text, StyleSheet, ActivityIndicator, Alert, ScrollView } from 'react-native';
+  import CircularPulse from '../components/CircularPulse';
+  import ChartComponent from '../components/ChartComponent';
+  import StreamingControl from '../components/StreamingControl';
+  import BleService from '../services/BleService';
+  import { Buffer } from 'buffer';
+  import { BLE_CONFIG } from '../config';
+  global.Buffer = Buffer;
+
+  const DeviceDetailsScreen = ({ route, navigation }) => {
+      const { deviceId, deviceName } = route.params;
+      const [loading, setLoading] = useState(true);
+
+      const { serviceUUID, characteristicUUIDs } = BLE_CONFIG;
+
+      useEffect(() => {
+          const manager = BleService.getInstance();
+          let subscription;
+
+          const setupNotifications = async () => {
+              try {
+                  await manager.connectToDevice(deviceId);
+                  await manager.discoverAllServicesAndCharacteristicsForDevice(deviceId);
+                  setLoading(false);
+              } catch (error) {
+                  console.error("Error connecting to device:", error);
+                  Alert.alert("Connection Error", "Failed to connect to the device.");
+                  navigation.goBack();
+              }
+          };
+
+          setupNotifications();
+
+          return () => {
+              manager.cancelDeviceConnection(deviceId);
+              if (subscription) {
+                  subscription.remove();
+              }
+          };
+      }, [deviceId]);
+
+      return (
+          <ScrollView contentContainerStyle={styles.scrollViewContent}>
+              <View style={styles.container}>
+                  <Text style={styles.title}>{deviceName || "Unnamed Device"}</Text>
+                  {loading ? (
+                      <ActivityIndicator size="large" color="#0000ff" />
+                  ) : (
+                      <>  
+                          <StreamingControl deviceId={deviceId} />
+                          <CircularPulse deviceId={deviceId} />
+                          <ChartComponent title={"PPG LED Green"} deviceId={deviceId} color={'rgb(239,202,112)'} serviceUUID={BLE_CONFIG.serviceUUID} characteristicId={BLE_CONFIG.characteristicUUIDs.channel1} />
+                          <ChartComponent title={"PPG LED Red"} deviceId={deviceId} color={'rgb(106,79,121)'} serviceUUID={BLE_CONFIG.serviceUUID} characteristicId={BLE_CONFIG.characteristicUUIDs.channel2} />
+                          <ChartComponent title={"PPG LED IR"} deviceId={deviceId} color={'rgb(170,214,117)'} serviceUUID={BLE_CONFIG.serviceUUID} characteristicId={BLE_CONFIG.characteristicUUIDs.channel3} />
+
+                      </>
+                  )}
+              </View>
+          </ScrollView>
+      );
+  };
+
+  const styles = StyleSheet.create({
+      scrollViewContent: {
+          paddingVertical: 20,
+      },
+      container: {
+          flex: 1,
+          alignItems: 'center',
+          paddingHorizontal: 20,
+      },
+      title: {
+          fontSize: 20,
+          fontWeight: 'bold',
+          marginBottom: 20,
+      },
+  });
+
+  export default DeviceDetailsScreen;
+
+  # Filename: screens/ScanBLEDevicesScreen.js
+  import React, { useState, useEffect } from 'react';
+  import { Text, View, Button, FlatList, StyleSheet, RefreshControl, Alert, ActivityIndicator, Modal } from 'react-native';
+  import { BleManager } from 'react-native-ble-plx';
+  import DeviceCard from '../components/DeviceCard';
+
+  import BleService from '../services/BleService';
+
+
+
+  const ScanBLEDevicesScreen = ({ navigation }) => {
+      const manager = BleService.getInstance();
+      const [devices, setDevices] = useState([]);
+      const [scanning, setScanning] = useState(false);
+      const [refreshing, setRefreshing] = useState(false);
+      const [isConnecting, setIsConnecting] = useState(false);
+      
+      useEffect(() => {
+          return () => manager.stopDeviceScan();
+      }, []);
+
+      const handleScanDevices = () => {
+          if (scanning) return;
+          setRefreshing(true); // Start refresh
+          setDevices([]);
+          setScanning(true);
+          manager.startDeviceScan(null, null, (error, device) => {
+              if (error) {
+                  console.log(error);
+                  setScanning(false);
+                  setRefreshing(false); // Stop refresh
+                  return;
+              }
+              if (device) {
+                  setDevices(prevDevices => {
+                      const deviceExists = prevDevices.some(item => item.id === device.id);
+                      if (!deviceExists) {
+                          return [...prevDevices, device];
+                      }
+                      return prevDevices;
+                  });
+              }
+          });
+
+          setTimeout(() => {
+              manager.stopDeviceScan();
+              setScanning(false);
+              setRefreshing(false); // Stop refresh
+          }, 5000);
+      };
+
+      const handleDevicePress = async (device) => {
+          setIsConnecting(true);
+
+          try {
+              await manager.connectToDevice(device.id);
+              setIsConnecting(false);
+              navigation.navigate('DeviceDetails', { deviceId: device.id, deviceName: device.name });
+          } catch (error) {
+              setIsConnecting(false);
+              Alert.alert('Connection Failed', 'Failed to connect to the device. Please try again.');
+          }
+      };
+
+      return (
+          <View style={styles.container}>
+              <Button title="Scan for Devices" onPress={handleScanDevices} disabled={scanning || isConnecting} />
+              <Modal
+                  animationType="fade"
+                  transparent={true}
+                  visible={isConnecting}
+                  onRequestClose={() => {
+                      Alert.alert("Modal has been closed.");
+                      setIsConnecting(!isConnecting);
+                  }}
+              >
+                  <View style={styles.centeredView}>
+                      <View style={styles.modalView}>
+                          <ActivityIndicator size="large" color="#0000ff" />
+                          <Text style={styles.modalText}>Connecting...</Text>
+                      </View>
+                  </View>
+              </Modal>
+              <FlatList
+                  data={devices}
+                  keyExtractor={item => item.id}
+                  renderItem={({ item }) => <DeviceCard device={item} onPress={() => handleDevicePress(item)} />}
+                  refreshControl={
+                      <RefreshControl
+                          refreshing={refreshing}
+                          onRefresh={handleScanDevices}
+                          colors={["#9Bd35A", "#689F38"]}
+                          tintColor="#0000ff"
+                      />
+                  }
+              />
+          </View>
+      );
+  };
+
+  const styles = StyleSheet.create({
+      container: {
+          flex: 1,
+          marginTop: 20,
+          paddingHorizontal: 10,
+      },
+      centeredView: {
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          marginTop: 22,
+          backgroundColor: 'rgba(0,0,0,0.5)'
+      },
+      modalView: {
+          margin: 20,
+          backgroundColor: "white",
+          borderRadius: 20,
+          padding: 35,
+          alignItems: "center",
+          shadowColor: "#000",
+          shadowOffset: {
+              width: 0,
+              height: 2
+          },
+          shadowOpacity: 0.25,
+          shadowRadius: 4,
+          elevation: 5
+      },
+      modalText: {
+          marginBottom: 15,
+          textAlign: "center"
+      }
+  });
+
+  export default ScanBLEDevicesScreen;
+
+  # Filename: services/BleService.js
+  import { BleManager } from 'react-native-ble-plx';
+
+  class BleService {
+      static instance = null;
+
+      static getInstance() {
+          if (BleService.instance == null) {
+              BleService.instance = new BleManager();
+          }
+          return BleService.instance;
+      }
+  }
+
+  export default BleService;
+

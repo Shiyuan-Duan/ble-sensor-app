@@ -8,6 +8,10 @@ node_modules/
 dist/
 web-build/
 
+# builds
+android/
+ios/
+
 # Native
 *.orig.*
 *.jks
